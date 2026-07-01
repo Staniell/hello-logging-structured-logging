@@ -1,0 +1,10 @@
+bin/
+obj/
+.git-local/
+.vs/
+.vscode/
+*.user
+*.suo
+*.rsuser
+TestResults/
+*.log
