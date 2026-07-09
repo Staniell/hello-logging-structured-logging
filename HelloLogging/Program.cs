@@ -1,6 +1,7 @@
 using HelloLogging.Observability;
 using Serilog;
 using Serilog.Formatting.Compact;
+using StackExchange.Redis;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -12,9 +13,36 @@ builder.Host.UseSerilog((context, services, loggerConfiguration) =>
         .WriteTo.Console(new CompactJsonFormatter());
 });
 
+// DB and Redis are optional: without connection strings (plain `dotnet run`) the app
+// registers no checks and /health still reports Healthy.
+var dbConnectionString = builder.Configuration.GetConnectionString("Db");
+var redisConnectionString = builder.Configuration.GetConnectionString("Redis");
+
+var healthChecks = builder.Services.AddHealthChecks();
+
+if (!string.IsNullOrWhiteSpace(dbConnectionString))
+{
+    healthChecks.AddNpgSql(dbConnectionString, name: "postgres");
+}
+
+if (!string.IsNullOrWhiteSpace(redisConnectionString))
+{
+    builder.Services.AddSingleton<IConnectionMultiplexer>(_ =>
+    {
+        var options = ConfigurationOptions.Parse(redisConnectionString);
+        // Connect lazily and keep retrying instead of crashing startup if Redis is down.
+        options.AbortOnConnectFail = false;
+        return ConnectionMultiplexer.Connect(options);
+    });
+    healthChecks.AddRedis(sp => sp.GetRequiredService<IConnectionMultiplexer>(), name: "redis");
+}
+
 var app = builder.Build();
 
-app.UseMiddleware<CorrelationIdMiddleware>();
+// Health probes are polled by infrastructure; keep them out of the request logs.
+app.UseWhen(
+    context => !context.Request.Path.StartsWithSegments("/health"),
+    branch => branch.UseMiddleware<CorrelationIdMiddleware>());
 
 app.MapGet("/", (ILogger<Program> logger, HttpContext context) =>
 {
@@ -32,5 +60,18 @@ app.MapGet("/fail", () =>
 {
     throw new InvalidOperationException("Sample failure for structured exception logging.");
 });
+
+app.MapHealthChecks("/health");
+
+if (!string.IsNullOrWhiteSpace(redisConnectionString))
+{
+    app.MapGet("/hits", async (IConnectionMultiplexer redis, ILogger<Program> logger) =>
+    {
+        var hits = await redis.GetDatabase().StringIncrementAsync("hellologging:hits");
+        logger.LogInformation("Redis hit counter incremented to {HitCount}", hits);
+
+        return Results.Ok(new { Hits = hits });
+    });
+}
 
 app.Run();
