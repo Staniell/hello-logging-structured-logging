@@ -1,0 +1,13 @@
+**/bin/
+**/obj/
+.git/
+.git-local/
+.agents/
+.vs/
+.vscode/
+outputs/
+**/*.md
+compose.yaml
+**/Dockerfile
+.dockerignore
+.gitignore
