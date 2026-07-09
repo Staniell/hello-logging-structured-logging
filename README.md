@@ -62,6 +62,39 @@ docker compose down        # keep the pgdata volume (and the Redis-persisted sta
 docker compose down -v     # also remove volumes for a clean slate
 ```
 
+## Week 2 review demo script
+
+Five minutes, one terminal, from the repository root:
+
+```powershell
+# 1. One command brings up API + PostgreSQL + Redis, health-gated
+docker compose up -d --build
+docker compose ps
+
+# 2. Correlation ID round trip through the container
+Invoke-WebRequest http://localhost:8080/ -Headers @{ "X-Correlation-ID" = "demo-review-001" }
+
+# 3. Redis is genuinely wired: counter survives repeated calls
+curl.exe -s http://localhost:8080/hits
+curl.exe -s http://localhost:8080/hits
+
+# 4. Structured error logging with stack trace
+curl.exe -s http://localhost:8080/fail
+
+# 5. The proof: JSON logs with correlation IDs in container output
+docker compose logs api --no-log-prefix | Select-String 'demo-review-001'
+
+# 6. Dependency outage shows up in health, and recovers
+docker compose stop redis
+curl.exe -s http://localhost:8080/health     # Unhealthy (503)
+docker compose start redis
+curl.exe -s http://localhost:8080/health     # Healthy (200)
+
+docker compose down
+```
+
+Sample captured output lives in `outputs/sample-container-log-entry.md`.
+
 ## Run locally without containers
 
 The DB and Redis wiring is optional — without connection strings nothing is registered and `/health` reports `Healthy`:
