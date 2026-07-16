@@ -1,0 +1,13 @@
+apiVersion: 1
+
+providers:
+  - name: hellologging
+    orgId: 1
+    folder: HelloLogging
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 10
+    # The dashboard is code: edit monitoring/grafana/dashboards/*.json, not the UI.
+    allowUiUpdates: false
+    options:
+      path: /var/lib/grafana/dashboards
