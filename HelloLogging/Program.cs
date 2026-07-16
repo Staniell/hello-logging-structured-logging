@@ -1,3 +1,5 @@
+using System.Diagnostics;
+using HelloLogging.Caching;
 using HelloLogging.Observability;
 using Serilog;
 using Serilog.Formatting.Compact;
@@ -35,6 +37,7 @@ if (!string.IsNullOrWhiteSpace(redisConnectionString))
         return ConnectionMultiplexer.Connect(options);
     });
     healthChecks.AddRedis(sp => sp.GetRequiredService<IConnectionMultiplexer>(), name: "redis");
+    builder.Services.AddSingleton<ICacheStore, RedisCacheStore>();
 }
 
 var app = builder.Build();
@@ -72,6 +75,45 @@ if (!string.IsNullOrWhiteSpace(redisConnectionString))
 
         return Results.Ok(new { Hits = hits });
     });
+
+    app.MapGet("/products", async (ICacheStore cache, ILogger<Program> logger, HttpContext context) =>
+    {
+        var stopwatch = Stopwatch.StartNew();
+
+        var (products, fromCache) = await ResponseCache.GetOrCreateAsync(
+            cache,
+            CacheKeys.Products,
+            ResponseCache.DefaultTtl,
+            async () =>
+            {
+                // Stand-in for a slow upstream call so cache hits are visibly faster.
+                await Task.Delay(500);
+                return new ProductsResponse(
+                    [
+                        new Product("P1001", "Wireless Headphones", 129.99m),
+                        new Product("P1002", "Gaming Mouse", 59.99m),
+                        new Product("P1003", "Mechanical Keyboard", 89.99m)
+                    ],
+                    DateTime.UtcNow);
+            });
+
+        var cacheStatus = fromCache ? "HIT" : "MISS";
+        context.Response.Headers["X-Cache"] = cacheStatus;
+        logger.LogInformation(
+            "Cache {CacheStatus} for {CacheKey} in {ElapsedMs} ms",
+            cacheStatus, CacheKeys.Products, stopwatch.ElapsedMilliseconds);
+
+        return Results.Ok(new
+        {
+            Source = fromCache ? "cache" : "origin",
+            products.GeneratedAtUtc,
+            products.Items
+        });
+    });
 }
 
 app.Run();
+
+public sealed record Product(string Id, string Name, decimal Price);
+
+public sealed record ProductsResponse(List<Product> Items, DateTime GeneratedAtUtc);
