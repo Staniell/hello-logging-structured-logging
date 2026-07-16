@@ -9,7 +9,8 @@ var tests = new List<(string Name, Action Test)>
     ("builds structured request log fields", BuildsStructuredRequestLogFields),
     ("cache miss calls origin and stores with 60s ttl", CacheMissCallsOriginAndStoresWithTtl),
     ("cache hit skips origin", CacheHitSkipsOrigin),
-    ("products cache key is namespaced", ProductsCacheKeyIsNamespaced)
+    ("products cache key is namespaced", ProductsCacheKeyIsNamespaced),
+    ("unhandled exception is stamped as 500 for metrics", UnhandledExceptionStampsFiveHundred)
 };
 
 var failures = new List<string>();
@@ -132,6 +133,26 @@ static void ProductsCacheKeyIsNamespaced()
 {
     AssertEqual("hellologging:cache:products", CacheKeys.Products);
     AssertTrue(CacheKeys.Products.StartsWith("hellologging:"), "Cache keys should be namespaced by app.");
+}
+
+static void UnhandledExceptionStampsFiveHundred()
+{
+    var context = new DefaultHttpContext();
+    var middleware = new UnhandledExceptionStatusMiddleware(
+        _ => throw new InvalidOperationException("Sample failure."));
+
+    var rethrown = false;
+    try
+    {
+        middleware.InvokeAsync(context).GetAwaiter().GetResult();
+    }
+    catch (InvalidOperationException)
+    {
+        rethrown = true;
+    }
+
+    AssertTrue(rethrown, "The original exception should propagate past the middleware.");
+    AssertEqual(StatusCodes.Status500InternalServerError, context.Response.StatusCode);
 }
 
 static void AssertEqual<T>(T expected, T? actual)

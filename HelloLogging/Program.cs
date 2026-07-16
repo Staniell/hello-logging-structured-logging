@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using HelloLogging.Caching;
 using HelloLogging.Observability;
+using Prometheus;
 using Serilog;
 using Serilog.Formatting.Compact;
 using StackExchange.Redis;
@@ -42,10 +43,17 @@ if (!string.IsNullOrWhiteSpace(redisConnectionString))
 
 var app = builder.Build();
 
-// Health probes are polled by infrastructure; keep them out of the request logs.
+// Count every request (including /metrics scrapes and /health polls); the Grafana
+// dashboard filters that infrastructure traffic out at query time instead.
+app.UseHttpMetrics();
+
+// Health probes and Prometheus scrapes are polled by infrastructure; keep them out of the request logs.
 app.UseWhen(
-    context => !context.Request.Path.StartsWithSegments("/health"),
+    context => !context.Request.Path.StartsWithSegments("/health")
+        && !context.Request.Path.StartsWithSegments("/metrics"),
     branch => branch.UseMiddleware<CorrelationIdMiddleware>());
+
+app.UseMiddleware<UnhandledExceptionStatusMiddleware>();
 
 app.MapGet("/", (ILogger<Program> logger, HttpContext context) =>
 {
@@ -65,6 +73,8 @@ app.MapGet("/fail", () =>
 });
 
 app.MapHealthChecks("/health");
+
+app.MapMetrics();
 
 if (!string.IsNullOrWhiteSpace(redisConnectionString))
 {

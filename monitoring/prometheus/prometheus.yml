@@ -1,0 +1,19 @@
+# Scrape config for the W2 Thursday monitoring deliverable.
+# 5s intervals are demo-fast so dashboards react within one refresh; production would
+# typically use the 15s-60s range.
+global:
+  scrape_interval: 5s
+  evaluation_interval: 5s
+
+scrape_configs:
+  # The HelloLogging API from the W1 Thursday compose stack, resolved over the
+  # default compose network by service name — the same wiring style as db/redis.
+  - job_name: hellologging-api
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["api:8080"]
+
+  # Self-scrape: proves the scrape pipeline works even with zero app traffic.
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]

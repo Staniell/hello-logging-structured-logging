@@ -6,6 +6,8 @@
 .vs/
 .vscode/
 outputs/
+monitoring/
+scripts/
 **/*.md
 compose.yaml
 **/Dockerfile
